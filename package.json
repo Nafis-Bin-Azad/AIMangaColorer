@@ -1,0 +1,33 @@
+{
+  "name": "manga-colorizer",
+  "version": "1.0.0",
+  "description": "AI-powered manga colorization tool using Stable Diffusion",
+  "main": "gui/main.js",
+  "scripts": {
+    "start": "electron gui/main.js",
+    "build": "electron-builder",
+    "build-mac": "electron-builder --mac"
+  },
+  "keywords": ["manga", "colorization", "stable-diffusion", "ai"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^27.0.0",
+    "socket.io-client": "^4.6.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^24.6.4"
+  },
+  "build": {
+    "appId": "com.mangacolorizer.app",
+    "productName": "Manga Colorizer",
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": ["dmg", "zip"]
+    },
+    "files": [
+      "gui/**/*",
+      "package.json"
+    ]
+  }
+}
