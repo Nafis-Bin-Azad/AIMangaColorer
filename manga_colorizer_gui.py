@@ -20,18 +20,25 @@ logger = logging.getLogger(__name__)
 class MangaColorizerApp:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Manga Colorizer - SD1.5")
-        self.root.geometry("1200x700")
+        self.root.title("Manga Colorizer - Single & Batch Mode")
+        self.root.geometry("1200x750")
         
-        # State
+        # Single image state
         self.input_path = None
         self.output_path = None
         self.original_image = None
         self.colored_image = None
+        self.is_processing = False
+        
+        # Batch processing state
+        self.batch_items = []  # List of (type, path) tuples
+        self.batch_processor = None
+        self.batch_thread = None
+        
+        # Shared engines
         self.pipeline = None
         self.mcv2_engine = None
         self.image_utils = None
-        self.is_processing = False
         
         # Create UI
         self._create_ui()
@@ -41,9 +48,25 @@ class MangaColorizerApp:
         self.output_dir.mkdir(exist_ok=True)
     
     def _create_ui(self):
-        """Create the UI layout"""
+        """Create the UI layout with tabs"""
+        # Create notebook (tabs)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Tab 1: Single Image
+        self.single_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.single_tab, text="Single Image")
+        self._create_single_image_ui(self.single_tab)
+        
+        # Tab 2: Batch Processing
+        self.batch_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.batch_tab, text="Batch Processing")
+        self._create_batch_ui(self.batch_tab)
+    
+    def _create_single_image_ui(self, parent):
+        """Create single image mode UI"""
         # Top controls frame
-        controls_frame = ttk.Frame(self.root, padding="10")
+        controls_frame = ttk.Frame(parent, padding="10")
         controls_frame.pack(fill=tk.X)
         
         # File selection
@@ -75,7 +98,7 @@ class MangaColorizerApp:
         ttk.Label(controls_frame, text="Fast: 30-60s, preserves text perfectly", foreground="gray", font=("TkDefaultFont", 9)).grid(row=1, column=3, columnspan=2, padx=5, sticky=tk.W)
         
         # Progress frame
-        progress_frame = ttk.Frame(self.root, padding="10")
+        progress_frame = ttk.Frame(parent, padding="10")
         progress_frame.pack(fill=tk.X)
         
         self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate', maximum=100)
@@ -85,7 +108,7 @@ class MangaColorizerApp:
         self.status_label.pack()
         
         # Images frame
-        images_frame = ttk.Frame(self.root, padding="10")
+        images_frame = ttk.Frame(parent, padding="10")
         images_frame.pack(fill=tk.BOTH, expand=True)
         
         # Original image
@@ -101,6 +124,106 @@ class MangaColorizerApp:
         
         self.colored_canvas = tk.Canvas(colored_frame, bg="gray20")
         self.colored_canvas.pack(fill=tk.BOTH, expand=True)
+    
+    def _create_batch_ui(self, parent):
+        """Create batch processing UI"""
+        # Input controls
+        input_frame = ttk.LabelFrame(parent, text="Input Sources", padding=10)
+        input_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Button(input_frame, text="Add Files", 
+                   command=self.add_files).pack(side=tk.LEFT, padx=5)
+        ttk.Button(input_frame, text="Add Zip", 
+                   command=self.add_zip).pack(side=tk.LEFT, padx=5)
+        ttk.Button(input_frame, text="Add Folder", 
+                   command=self.add_folder).pack(side=tk.LEFT, padx=5)
+        ttk.Button(input_frame, text="Clear All", 
+                   command=self.clear_batch).pack(side=tk.RIGHT, padx=5)
+        
+        # Items list with reordering
+        list_frame = ttk.LabelFrame(parent, text="Items (select and use buttons to reorder)", padding=10)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Scrollable listbox
+        list_container = ttk.Frame(list_frame)
+        list_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        self.batch_listbox = tk.Listbox(list_container, height=8)
+        scrollbar = ttk.Scrollbar(list_container, orient=tk.VERTICAL, 
+                                   command=self.batch_listbox.yview)
+        self.batch_listbox.config(yscrollcommand=scrollbar.set)
+        self.batch_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Reorder buttons
+        btn_frame = ttk.Frame(list_frame)
+        btn_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=5)
+        ttk.Button(btn_frame, text="Move Up", width=10, 
+                   command=self.move_up).pack(pady=2)
+        ttk.Button(btn_frame, text="Move Down", width=10, 
+                   command=self.move_down).pack(pady=2)
+        ttk.Button(btn_frame, text="Remove", width=10, 
+                   command=self.remove_item).pack(pady=2)
+        
+        # Output settings
+        output_frame = ttk.LabelFrame(parent, text="Output", padding=10)
+        output_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(output_frame, text="Format:").pack(side=tk.LEFT, padx=5)
+        self.output_format = tk.StringVar(value="auto")
+        ttk.Radiobutton(output_frame, text="Folder", 
+                        variable=self.output_format, 
+                        value="folder").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(output_frame, text="Zip", 
+                        variable=self.output_format, 
+                        value="zip").pack(side=tk.LEFT, padx=5)
+        ttk.Radiobutton(output_frame, text="Auto", 
+                        variable=self.output_format, 
+                        value="auto").pack(side=tk.LEFT, padx=5)
+        
+        # Engine selection for batch
+        ttk.Label(output_frame, text="Engine:").pack(side=tk.LEFT, padx=(20, 5))
+        self.batch_engine_var = tk.StringVar(value="Fast (Manga v2)")
+        engine_dropdown = ttk.Combobox(
+            output_frame,
+            textvariable=self.batch_engine_var,
+            values=["Fast (Manga v2)", "SD1.5 (Slow, fallback)"],
+            state="readonly",
+            width=20
+        )
+        engine_dropdown.pack(side=tk.LEFT, padx=5)
+        
+        # Progress section
+        progress_frame = ttk.LabelFrame(parent, text="Progress", padding=10)
+        progress_frame.pack(fill=tk.BOTH, padx=10, pady=5)
+        
+        self.batch_status = ttk.Label(progress_frame, text="Ready - Add files to begin", foreground="gray")
+        self.batch_status.pack(pady=5)
+        
+        self.batch_progress = ttk.Progressbar(progress_frame, length=400, mode='determinate')
+        self.batch_progress.pack(pady=5, fill=tk.X, padx=20)
+        
+        # Thumbnail + details
+        preview_frame = ttk.Frame(progress_frame)
+        preview_frame.pack(fill=tk.X, pady=5)
+        
+        self.batch_thumbnail_canvas = tk.Canvas(preview_frame, width=150, height=150, bg='gray30')
+        self.batch_thumbnail_canvas.pack(side=tk.LEFT, padx=10)
+        
+        self.batch_details = ttk.Label(preview_frame, text="", justify=tk.LEFT)
+        self.batch_details.pack(side=tk.LEFT, padx=10, fill=tk.BOTH, expand=True)
+        
+        # Control buttons
+        btn_control_frame = ttk.Frame(parent, padding=10)
+        btn_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.batch_start_btn = ttk.Button(btn_control_frame, text="Start Batch", 
+                                           command=self.start_batch)
+        self.batch_start_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.batch_cancel_btn = ttk.Button(btn_control_frame, text="Cancel", 
+                                            command=self.cancel_batch, state=tk.DISABLED)
+        self.batch_cancel_btn.pack(side=tk.LEFT, padx=5)
     
     def select_file(self):
         """Open file dialog to select manga image"""
@@ -346,6 +469,221 @@ class MangaColorizerApp:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save image: {e}")
                 logger.error(f"Failed to save image: {e}")
+    
+    # Batch processing methods
+    
+    def add_files(self):
+        """Add multiple image files"""
+        files = filedialog.askopenfilenames(
+            title="Select manga pages",
+            filetypes=[
+                ("Image files", "*.jpg *.jpeg *.png *.webp *.bmp"),
+                ("All files", "*.*")
+            ]
+        )
+        for file in files:
+            self.batch_items.append(('file', Path(file)))
+            self.batch_listbox.insert(tk.END, f"File: {Path(file).name}")
+        
+        if files:
+            self.batch_status.config(text=f"{len(self.batch_items)} items ready", foreground="blue")
+    
+    def add_zip(self):
+        """Add zip file(s)"""
+        files = filedialog.askopenfilenames(
+            title="Select zip files",
+            filetypes=[("Zip files", "*.zip"), ("All files", "*.*")]
+        )
+        for file in files:
+            self.batch_items.append(('zip', Path(file)))
+            self.batch_listbox.insert(tk.END, f"Zip: {Path(file).name}")
+        
+        if files:
+            self.batch_status.config(text=f"{len(self.batch_items)} items ready", foreground="blue")
+    
+    def add_folder(self):
+        """Add folder"""
+        folder = filedialog.askdirectory(title="Select manga folder")
+        if folder:
+            self.batch_items.append(('folder', Path(folder)))
+            self.batch_listbox.insert(tk.END, f"Folder: {Path(folder).name}")
+            self.batch_status.config(text=f"{len(self.batch_items)} items ready", foreground="blue")
+    
+    def clear_batch(self):
+        """Clear all batch items"""
+        self.batch_items.clear()
+        self.batch_listbox.delete(0, tk.END)
+        self.batch_status.config(text="Ready - Add files to begin", foreground="gray")
+        self.batch_progress['value'] = 0
+        self.batch_details.config(text="")
+        self.batch_thumbnail_canvas.delete("all")
+    
+    def move_up(self):
+        """Move selected item up"""
+        selection = self.batch_listbox.curselection()
+        if selection and selection[0] > 0:
+            idx = selection[0]
+            # Swap in data list
+            self.batch_items[idx], self.batch_items[idx-1] = \
+                self.batch_items[idx-1], self.batch_items[idx]
+            # Swap in listbox
+            item = self.batch_listbox.get(idx)
+            self.batch_listbox.delete(idx)
+            self.batch_listbox.insert(idx-1, item)
+            self.batch_listbox.selection_set(idx-1)
+    
+    def move_down(self):
+        """Move selected item down"""
+        selection = self.batch_listbox.curselection()
+        if selection and selection[0] < len(self.batch_items) - 1:
+            idx = selection[0]
+            # Swap in data list
+            self.batch_items[idx], self.batch_items[idx+1] = \
+                self.batch_items[idx+1], self.batch_items[idx]
+            # Swap in listbox
+            item = self.batch_listbox.get(idx)
+            self.batch_listbox.delete(idx)
+            self.batch_listbox.insert(idx+1, item)
+            self.batch_listbox.selection_set(idx+1)
+    
+    def remove_item(self):
+        """Remove selected item"""
+        selection = self.batch_listbox.curselection()
+        if selection:
+            idx = selection[0]
+            del self.batch_items[idx]
+            self.batch_listbox.delete(idx)
+            self.batch_status.config(text=f"{len(self.batch_items)} items ready", foreground="blue")
+    
+    def start_batch(self):
+        """Start batch processing in background thread"""
+        if not self.batch_items:
+            messagebox.showwarning("No Items", "Please add files, zips, or folders first")
+            return
+        
+        # Disable controls
+        self.batch_start_btn.config(state=tk.DISABLED)
+        self.batch_cancel_btn.config(state=tk.NORMAL)
+        self.batch_status.config(text="Initializing...", foreground="blue")
+        
+        # Initialize image utils if needed
+        if self.image_utils is None:
+            self.image_utils = ImageUtils()
+        
+        # Initialize engines based on selection
+        engine_choice = self.batch_engine_var.get()
+        
+        if "Fast" in engine_choice:
+            if self.mcv2_engine is None:
+                self.batch_status.config(text="Loading Fast Colorizer (first time)...", foreground="blue")
+                from mcv2_engine import MangaColorizationV2Engine
+                self.mcv2_engine = MangaColorizationV2Engine()
+                self.mcv2_engine.ensure_weights()
+                self.mcv2_engine.load_model()
+            engine = self.mcv2_engine
+            engine_type = 'mcv2'
+        else:
+            if self.pipeline is None:
+                self.batch_status.config(text="Loading SD1.5 (first time)...", foreground="blue")
+                self.pipeline = SD15Pipeline()
+                self.pipeline.load_models()
+            engine = self.pipeline
+            engine_type = 'sd15'
+        
+        # Create processor
+        from batch_processor import BatchProcessor
+        self.batch_processor = BatchProcessor(
+            engine=engine,
+            image_utils=self.image_utils,
+            engine_type=engine_type,
+            progress_callback=self.update_batch_progress
+        )
+        
+        # Start processing thread
+        self.batch_thread = threading.Thread(
+            target=self._run_batch_processing,
+            daemon=True
+        )
+        self.batch_thread.start()
+    
+    def _run_batch_processing(self):
+        """Run batch processing (in background thread)"""
+        try:
+            output_path = self.output_dir / "batch_result"
+            output_format = self.output_format.get()
+            
+            num_processed = self.batch_processor.process_batch(
+                input_items=self.batch_items,
+                output_path=output_path,
+                output_format=output_format
+            )
+            
+            # Determine actual output location
+            if output_format == 'zip' or (output_format == 'auto' and 
+                any(item_type == 'zip' for item_type, _ in self.batch_items)):
+                final_path = output_path.with_suffix('.zip')
+            else:
+                final_path = output_path
+            
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Complete", 
+                f"Batch processing complete!\n\nProcessed {num_processed} images\nOutput: {final_path}"
+            ))
+            
+        except Exception as e:
+            logger.error(f"Batch processing error: {e}", exc_info=True)
+            self.root.after(0, lambda: messagebox.showerror(
+                "Error", 
+                f"Batch processing failed: {e}"
+            ))
+        finally:
+            self.root.after(0, self._reset_batch_controls)
+    
+    def update_batch_progress(self, stage, current, total, eta, thumbnail):
+        """Update progress display (called from batch processor)"""
+        def update():
+            # Update status
+            self.batch_status.config(text=f"{stage} ({current}/{total})", foreground="blue")
+            
+            # Update progress bar
+            progress_pct = (current / total) * 100
+            self.batch_progress['value'] = progress_pct
+            
+            # Update details
+            eta_min = int(eta // 60)
+            eta_sec = int(eta % 60)
+            eta_str = f"{eta_min}m {eta_sec}s" if eta_min > 0 else f"{eta_sec}s"
+            
+            self.batch_details.config(
+                text=f"Progress: {progress_pct:.1f}%\nETA: {eta_str}\nCurrent: {stage}"
+            )
+            
+            # Update thumbnail
+            if thumbnail:
+                self.batch_thumbnail_canvas.delete("all")
+                try:
+                    photo = ImageTk.PhotoImage(thumbnail)
+                    self.batch_thumbnail_canvas.create_image(
+                        75, 75, image=photo, anchor=tk.CENTER
+                    )
+                    self.batch_thumbnail_canvas.image = photo  # Keep reference
+                except Exception as e:
+                    logger.error(f"Failed to update thumbnail: {e}")
+        
+        self.root.after(0, update)
+    
+    def cancel_batch(self):
+        """Cancel the batch processing"""
+        if self.batch_processor:
+            self.batch_processor.cancel()
+            self.batch_status.config(text="Cancelling...", foreground="orange")
+            self.batch_cancel_btn.config(state=tk.DISABLED)
+    
+    def _reset_batch_controls(self):
+        """Reset batch controls after completion"""
+        self.batch_start_btn.config(state=tk.NORMAL)
+        self.batch_cancel_btn.config(state=tk.DISABLED)
+        self.batch_progress['value'] = 0
     
     def run(self):
         """Start the application"""
