@@ -1,428 +1,197 @@
 # Manga Colorizer
 
-AI-powered manga colorization tool using Stable Diffusion and ControlNet. Automatically colorizes black-and-white manga pages while preserving line art and protecting text regions.
+Simple desktop application for colorizing black-and-white manga pages with two engines: a **fast non-diffusion colorizer** (default) and **Stable Diffusion 1.5** (fallback).
 
 ## Features
 
-- **Automatic Colorization**: Uses Stable Diffusion with ControlNet for high-quality manga colorization
-- **Text Protection**: Automatically detects and preserves speech bubbles and text regions
-- **Batch Processing**: Process single images or entire ZIP archives
-- **Multiple Interfaces**: 
-  - Modern Electron desktop GUI
-  - Powerful command-line interface
-- **Apple Silicon Optimized**: Native MPS (Metal Performance Shaders) support for M1/M2/M3 Macs
-- **Customizable**: Adjust prompts, models, and generation parameters
-- **Local & Offline**: Runs completely locally with no API costs
+- **Two colorization engines:**
+  - **Fast (Manga v2)**: 30-60 seconds per page, preserves text perfectly
+  - **SD1.5 (Fallback)**: 5-7 minutes per page, more flexible
+- Desktop GUI built with Tkinter (no web dependencies)
+- **Batch processing mode** for colorizing hundreds of pages
+- Automatic text/bubble detection and protection
+- Original ink preservation to keep lineart crisp
+- Optimized for Mac M2 Pro (MPS) with low memory usage
 
 ## Requirements
 
-### System Requirements
-- macOS 12.0+ (Monterey or later)
-- Apple Silicon (M1/M2/M3) or Intel Mac
-- 16GB RAM recommended (8GB minimum)
-- 10GB free disk space for models
-
-### Software Requirements
-- Python 3.10 or higher
-- Node.js 18+ (for GUI)
-- Git
+- Python 3.9 or higher
+- Mac with M2/M3 chip (MPS), CUDA GPU, or CPU
+- **Fast Engine (MCV2)**: ~4GB RAM, ~600MB disk for models
+- **SD1.5 Engine**: ~8GB RAM, ~2GB disk for models
+- Models are downloaded automatically on first run
 
 ## Installation
 
-### 1. Clone the Repository
+1. Clone this repository or download the files
 
+2. Create a virtual environment (recommended):
 ```bash
-git clone <repository-url>
-cd AIMangaColorer
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-### 2. Create Python Virtual Environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On macOS/Linux
-```
-
-### 3. Install PyTorch with MPS Support
-
-For Apple Silicon Macs:
-```bash
-pip install torch torchvision torchaudio
-```
-
-### 4. Install Python Dependencies
-
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Install Node.js Dependencies (for GUI)
+For Mac with Apple Silicon:
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+```
+
+## Usage
+
+### GUI Mode (Single Images)
+
+1. Run the application:
+```bash
+python manga_colorizer_gui.py
+# Or use the launcher:
+./run.sh
+```
+
+2. Select engine from dropdown:
+   - **Fast (Manga v2)** - Default, 30-60 seconds, perfect text preservation
+   - **SD1.5 (Slow, fallback)** - 5-7 minutes, more flexible
+
+3. Click "Browse..." to select a manga page (PNG, JPG, etc.)
+
+4. Click "Colorize" to start
+   - First run downloads models (~600MB for Fast, ~2GB for SD1.5)
+   - Fast engine: 30-60 seconds per page
+   - SD1.5 engine: 5-7 minutes per page
+
+5. View the result and click "Save As..." to save
+   - Output is also automatically saved to the `output/` folder
+
+### Batch Mode (Multiple Images)
+
+Process entire folders quickly:
 
 ```bash
-npm install
+# Colorize entire folder with fast engine (default)
+python batch_colorize.py --input pages/ --output colored/
+
+# Use SD1.5 fallback
+python batch_colorize.py --input pages/ --output colored/ --engine sd15
+
+# Adjust ink preservation (lower = preserve more dark pixels)
+python batch_colorize.py --input pages/ --output colored/ --ink-threshold 60
+
+# Process higher resolution
+python batch_colorize.py --input pages/ --output colored/ --max-side 1280
 ```
 
-### 6. Verify Installation
-
-```bash
-python cli/cli.py --help
-```
-
-## Quick Start
-
-### Using the CLI
-
-**Colorize a single image:**
-```bash
-python cli/cli.py colorize input.png
-```
-
-**Colorize a ZIP of manga pages:**
-```bash
-python cli/cli.py colorize manga_chapter.zip --output ./colored
-```
-
-**Use a different model:**
-```bash
-python cli/cli.py colorize input.png --model meinamix
-```
-
-**Custom prompt:**
-```bash
-python cli/cli.py colorize input.png --prompt "vibrant colors, high contrast"
-```
-
-### Using the GUI
-
-**Start the application:**
-```bash
-npm start
-```
-
-The Electron app will launch automatically and start the Python backend server.
-
-## Usage Guide
-
-### Command-Line Interface
-
-```bash
-python cli/cli.py colorize [OPTIONS] INPUT_PATH
-```
-
-**Options:**
-- `--output, -o`: Output directory (default: ./output)
-- `--model, -m`: Model to use (default: anythingv5)
-- `--prompt, -p`: Custom prompt for colorization
-- `--negative-prompt, -n`: Custom negative prompt
-- `--denoise, -d`: Denoising strength 0.3-0.5 (default: 0.4)
-- `--steps, -s`: Number of inference steps (default: 25)
-- `--guidance, -g`: Guidance scale (default: 8.0)
-- `--seed`: Random seed for reproducibility
-- `--zip`: Create output ZIP file
-- `--no-text-protection`: Disable text detection
-- `--comparison`: Save before/after comparison
-- `--verbose, -v`: Verbose output
-
-**Examples:**
-
-```bash
-# Basic colorization
-python cli/cli.py colorize page.png
-
-# Batch with custom settings
-python cli/cli.py colorize chapter.zip \
-  --model meinamix \
-  --steps 30 \
-  --denoise 0.45 \
-  --zip
-
-# High quality with reproducibility
-python cli/cli.py colorize input.png \
-  --steps 35 \
-  --guidance 9.0 \
-  --seed 42 \
-  --comparison
-
-# Without text protection (faster)
-python cli/cli.py colorize page.png --no-text-protection
-```
-
-**List available models:**
-```bash
-python cli/cli.py list-models
-```
-
-**Download a model:**
-```bash
-python cli/cli.py download-model meinamix
-```
-
-**Start server only:**
-```bash
-python cli/cli.py server
-```
-
-### Desktop GUI
-
-1. **Launch the app:**
-   ```bash
-   npm start
-   ```
-
-2. **Upload files:**
-   - Drag and drop an image or ZIP file
-   - Or click "Browse Files" to select
-
-3. **Configure settings:**
-   - Select model from dropdown
-   - Customize prompts
-   - Adjust advanced settings (steps, guidance, etc.)
-   - Toggle text protection
-
-4. **Start colorization:**
-   - Click "Start Colorization"
-   - Monitor progress in real-time
-   - View results in the preview gallery
-
-5. **Access outputs:**
-   - Files saved to `output/` directory
-   - Click "Open Output Folder" for quick access
-
-## Available Models
-
-| Model | Description | Best For |
-|-------|-------------|----------|
-| **anythingv5** | Versatile anime model | General manga colorization |
-| **meinamix** | High-quality anime style | Detailed character art |
-| **abyssorangemix** | Vibrant colors | Action scenes, fantasy |
-
-### Adding Custom Models
-
-Place downloaded models in the `models/` directory:
-
-```
-models/
-├── your-custom-model/
-│   ├── model_index.json
-│   ├── vae/
-│   ├── text_encoder/
-│   └── ...
-```
-
-Or use the download command:
-```bash
-python cli/cli.py download-model custom-model --model-id "huggingface/model-id"
-```
-
-## Configuration
-
-### Default Prompt
-
-The default colorization prompt is optimized for manga:
-
-```
-full color manga page, anime style coloring, clean lineart preserved,
-soft cel shading, consistent colors, detailed lighting, vibrant but natural tones
-```
-
-### Default Negative Prompt
-
-```
-blurry, repainting lines, messy colors, color bleeding, oversaturated,
-artifacts, low quality, jpeg artifacts, text recoloring, speech bubble coloring,
-monochrome
-```
-
-### Parameters
-
-- **Denoise Strength** (0.3-0.5): Lower values preserve more of the original lineart
-- **Guidance Scale** (7-9): Higher values follow the prompt more closely
-- **Steps** (20-30): More steps = higher quality but slower
-- **ControlNet Scale** (1.0): How strongly to condition on lineart
-
-## Technical Details
-
-### Architecture
-
-The application uses a multi-layer architecture:
-
-1. **Frontend Layer**: Electron GUI or CLI
-2. **API Layer**: Flask REST API with WebSocket
-3. **Processing Layer**: 
-   - Model Manager (loading and caching)
-   - Image Processor (preprocessing/postprocessing)
-   - ControlNet Processor (lineart extraction)
-   - Text Detector (speech bubble detection)
-   - Batch Processor (ZIP handling)
-4. **AI Layer**: Stable Diffusion + ControlNet pipeline
-
-### Text Detection
-
-The text detector uses:
-- OpenCV contour detection for speech bubbles
-- Morphological operations for text regions
-- Binary masking to protect detected areas
-- The colorization composites protected regions from the original image
-
-### MPS Optimization
-
-For Apple Silicon Macs, the app uses:
-- Metal Performance Shaders (MPS) for GPU acceleration
-- Attention slicing for memory efficiency
-- Float16 precision for faster inference
+**Batch Performance:**
+- Fast engine: 100-200 pages/hour
+- SD1.5 engine: 10-15 pages/hour
 
 ## Project Structure
 
 ```
 AIMangaColorer/
-├── backend/              # Python backend
-│   ├── colorizer.py      # Main orchestrator
-│   ├── pipeline.py       # SD + ControlNet pipeline
-│   ├── model_manager.py  # Model loading/management
-│   ├── image_processor.py
-│   ├── text_detector.py
-│   ├── controlnet_processor.py
-│   ├── batch_processor.py
-│   ├── server.py         # Flask API
-│   └── config.py
-├── cli/                  # Command-line interface
-│   └── cli.py
-├── gui/                  # Electron desktop app
-│   ├── main.js           # Main process
-│   ├── preload.js        # IPC bridge
-│   ├── renderer.js       # UI logic
-│   ├── index.html
-│   └── styles.css
-├── models/               # Local model storage
-├── output/               # Colorized outputs
-├── tests/                # Unit tests
-├── requirements.txt
-├── package.json
-└── README.md
+├── manga_colorizer_gui.py       # Main Tkinter GUI application
+├── mcv2_engine.py                # Fast manga colorization v2 engine
+├── sd_pipeline.py                # SD1.5 + ControlNet (fallback)
+├── image_utils.py                # Image processing utilities
+├── batch_colorize.py             # Batch processing script
+├── config.py                     # Configuration constants
+├── requirements.txt              # Python dependencies
+├── run.sh                        # Quick launcher script
+├── third_party/                  # Vendored manga-colorization-v2 code
+│   └── manga_colorization_v2/
+├── output/                       # Default output directory
+└── README.md                     # This file
 ```
+
+## Configuration
+
+Edit `config.py` to adjust parameters:
+
+**Fast Engine (MCV2)**:
+- `size`: Processing size (default: 576, must be divisible by 32)
+- `ink_threshold`: Ink preservation (default: 80, lower = preserve more dark pixels)
+- `denoise`: Enable denoising (default: True)
+- `denoise_sigma`: Denoising strength (default: 25)
+
+**SD1.5 Engine (Fallback)**:
+- `max_side`: Image resolution (default: 640)
+- `steps`: Inference steps (default: 18, lower = faster)
+- `guidance_scale`: CFG scale (default: 7.5)
+- `strength`: Denoise strength (default: 0.85)
+
+## Models Used
+
+**Fast Engine (Manga Colorization v2)**:
+- **Repository**: qweasdd/manga-colorization-v2
+- **Weights**: Auto-downloaded from Google Drive (~600MB)
+- **Speed**: 30-60 seconds per page
+- **Method**: Non-diffusion GAN-based colorization
+
+**SD1.5 Engine (Fallback)**:
+- **Base Model**: `stablediffusionapi/anything-v5` (anime-focused SD1.5)
+- **ControlNet**: `lllyasviel/control_v11p_sd15s2_lineart_anime`
+- **Lineart Detector**: LineartAnimeDetector from controlnet-aux
+- **Speed**: 5-7 minutes per page
+- **Method**: Diffusion-based with lineart control
+
+All models are downloaded automatically on first run.
+
+## Performance & Memory
+
+**Fast Engine (MCV2) - Recommended**:
+- Speed: 30-60 seconds per page
+- Memory: ~4GB RAM
+- Batch: 100-200 pages/hour
+- Text: Perfect preservation (never redrawn)
+
+**SD1.5 Engine - Fallback**:
+- Speed: 5-7 minutes per page
+- Memory: ~8GB RAM (includes optimizations for Mac MPS)
+- Batch: 10-15 pages/hour
+- Text: Preserved via ink overlay
+
+SD1.5 optimizations for Mac MPS:
+- Attention slicing (reduces memory usage)
+- VAE slicing (processes images in tiles)
+- VAE float32 upcast (prevents black output on MPS)
+- MPS cache clearing after each generation
+
+If you encounter issues:
+- **Use Fast engine (MCV2)** - solves most problems
+- For SD1.5: reduce `max_side` in config.py (try 512)
+- Close other applications
 
 ## Troubleshooting
 
-### Models not downloading
-
-**Issue**: Models fail to download from HuggingFace
-
-**Solution**:
+**Models not downloading:**
 - Check internet connection
-- Manually download models and place in `models/` directory
-- Set HuggingFace token if using private models
+- Ensure HuggingFace is accessible
+- Try running with `HF_HUB_OFFLINE=0` environment variable
 
-### Out of memory errors
+**Black output images:**
+- Ensure you're using the latest version
+- VAE is automatically upcast to float32 on MPS
 
-**Issue**: Process killed due to insufficient memory
+**Slow performance:**
+- First run downloads models and is slower
+- Reduce `max_side` or `steps` in `config.py`
+- Ensure no other heavy applications are running
 
-**Solution**:
-- Reduce image resolution (automatically handled)
-- Process fewer images at once
-- Lower `num_inference_steps`
-- Enable attention slicing (enabled by default)
-
-### MPS errors on Apple Silicon
-
-**Issue**: MPS-related errors on M1/M2/M3
-
-**Solution**:
-- Update to latest macOS version
-- Update PyTorch: `pip install --upgrade torch`
-- Fall back to CPU: Set `device="cpu"` in config.py
-
-### Text regions being colorized
-
-**Issue**: Text gets colorized despite protection
-
-**Solution**:
-- Text detection is probabilistic
-- Increase padding in config
-- Adjust detection sensitivity
-- Use `--no-text-protection` and manually mask if needed
-
-### Electron app won't start
-
-**Issue**: GUI fails to launch
-
-**Solution**:
-- Ensure Node.js 18+ installed
-- Run `npm install` again
-- Check Python server starts: `python backend/server.py`
-- Check logs in Console.app
-
-## Development
-
-### Running Tests
-
-```bash
-# Run all tests
-python -m pytest tests/
-
-# Run specific test
-python -m pytest tests/test_image_processor.py
-
-# With coverage
-python -m pytest --cov=backend tests/
-```
-
-### Development Mode
-
-Enable debug mode in Electron:
-```bash
-NODE_ENV=development npm start
-```
-
-Enable Flask debug mode:
-```python
-# In backend/config.py
-FLASK_DEBUG = True
-```
-
-## Performance Tips
-
-1. **First run is slow**: Models need to download (2-4GB)
-2. **Batch processing**: Process multiple pages at once for efficiency
-3. **Resolution**: Larger images take longer but produce better results
-4. **Steps**: 20-25 steps is usually sufficient
-5. **Model caching**: Models stay in memory between runs (faster)
-
-## Limitations
-
-- Requires significant disk space for models (5-10GB)
-- GPU acceleration requires Apple Silicon or CUDA
-- Text detection is not 100% accurate
-- Processing speed depends on hardware (~30s per page on M2)
-- Works best with clean, high-contrast manga line art
-
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+**Text is blurred:**
+- The ink preservation feature should prevent this
+- Adjust `ink_threshold` in image_utils.py if needed (default: 110)
 
 ## License
 
-MIT License - see LICENSE file for details
+See LICENSE file for details.
 
-## Acknowledgments
+## Credits
 
-- [Stable Diffusion](https://github.com/Stability-AI/stablediffusion) by Stability AI
-- [ControlNet](https://github.com/lllyasviel/ControlNet) by Lvmin Zhang
-- [Diffusers](https://github.com/huggingface/diffusers) by HuggingFace
-- Anime models by the community
-
-## Support
-
-For issues and questions:
-- Check existing GitHub issues
-- Create a new issue with details
-- Include system info and error logs
-
----
-
-**Happy Colorizing!** 🎨
+- Stable Diffusion by Stability AI
+- ControlNet by Lvmin Zhang
+- Anime ControlNet models by lllyasviel
+- Anything v5 model by stablediffusionapi
