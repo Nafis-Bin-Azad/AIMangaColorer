@@ -8,10 +8,15 @@ from pathlib import Path
 from tqdm import tqdm
 from PIL import Image
 import logging
+import sys
 
-from mcv2_engine import MangaColorizationV2Engine
-from image_utils import ImageUtils
-from config import MCV2_PARAMS
+# Add backend to path for imports
+backend_dir = Path(__file__).parent / 'backend'
+sys.path.insert(0, str(backend_dir))
+
+from core.mcv2_engine import MangaColorizationV2Engine
+from core.image_utils import ImageUtils
+from core.config import MCV2_PARAMS
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

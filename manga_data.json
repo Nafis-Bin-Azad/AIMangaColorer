@@ -15,14 +15,14 @@
         "chapter": "Ch_30.0",
         "page": 0,
         "total_pages": 33,
-        "last_read": "2026-01-17T03:11:18.613436"
+        "last_read": "2026-01-17T03:28:00.140883"
       },
       "Ch_30.1": {
         "manga_title": "Fun Territory Defense by the Optimistic Lord",
         "chapter": "Ch_30.1",
-        "page": 5,
+        "page": 1,
         "total_pages": 11,
-        "last_read": "2026-01-17T03:11:25.940258"
+        "last_read": "2026-01-17T19:06:04.677313"
       },
       "Ch_30.2": {
         "manga_title": "Fun Territory Defense by the Optimistic Lord",
@@ -50,7 +50,7 @@
         "chapter": "Ch_32.1",
         "page": 0,
         "total_pages": 13,
-        "last_read": "2026-01-17T03:11:10.433022"
+        "last_read": "2026-01-17T03:27:54.189726"
       },
       "Ch_32.3": {
         "manga_title": "Fun Territory Defense by the Optimistic Lord",
@@ -76,18 +76,37 @@
       "Ch_31.5": {
         "manga_title": "Fun Territory Defense by the Optimistic Lord",
         "chapter": "Ch_31.5",
-        "page": 12,
+        "page": 0,
         "total_pages": 14,
-        "last_read": "2026-01-17T03:11:59.925279"
+        "last_read": "2026-01-17T03:27:56.195342"
       }
     }
   },
-  "bookmarks": {},
+  "bookmarks": {
+    "Fun Territory Defense by the Optimistic Lord": {
+      "Ch_30.1": []
+    }
+  },
   "history": [
     {
       "manga_title": "Fun Territory Defense by the Optimistic Lord",
+      "chapter": "Ch_30.1",
+      "timestamp": "2026-01-17T03:28:02.595158"
+    },
+    {
+      "manga_title": "Fun Territory Defense by the Optimistic Lord",
+      "chapter": "Ch_30.0",
+      "timestamp": "2026-01-17T03:28:00.142246"
+    },
+    {
+      "manga_title": "Fun Territory Defense by the Optimistic Lord",
       "chapter": "Ch_31.5",
-      "timestamp": "2026-01-17T03:11:45.689686"
+      "timestamp": "2026-01-17T03:27:56.195975"
+    },
+    {
+      "manga_title": "Fun Territory Defense by the Optimistic Lord",
+      "chapter": "Ch_32.1",
+      "timestamp": "2026-01-17T03:27:54.190494"
     },
     {
       "manga_title": "Fun Territory Defense by the Optimistic Lord",
@@ -101,16 +120,6 @@
     },
     {
       "manga_title": "Fun Territory Defense by the Optimistic Lord",
-      "chapter": "Ch_30.1",
-      "timestamp": "2026-01-17T03:11:21.232216"
-    },
-    {
-      "manga_title": "Fun Territory Defense by the Optimistic Lord",
-      "chapter": "Ch_30.0",
-      "timestamp": "2026-01-17T03:11:18.614600"
-    },
-    {
-      "manga_title": "Fun Territory Defense by the Optimistic Lord",
       "chapter": "Ch_33.2",
       "timestamp": "2026-01-17T03:11:15.607922"
     },
@@ -118,11 +127,6 @@
       "manga_title": "Fun Territory Defense by the Optimistic Lord",
       "chapter": "Ch_32.3",
       "timestamp": "2026-01-17T03:11:12.685376"
-    },
-    {
-      "manga_title": "Fun Territory Defense by the Optimistic Lord",
-      "chapter": "Ch_32.1",
-      "timestamp": "2026-01-17T03:11:10.433556"
     },
     {
       "manga_title": "Fun Territory Defense by the Optimistic Lord",

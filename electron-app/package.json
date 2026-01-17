@@ -1,0 +1,70 @@
+{
+  "name": "manga-colorizer",
+  "version": "1.0.0",
+  "description": "AI-powered manga colorization tool with React + Electron + Python backend",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev:react": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && NODE_ENV=development electron .",
+    "build": "tsc && vite build",
+    "build:electron": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": ["manga", "colorization", "electron", "react", "ai"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vite-plugin-electron": "^0.28.0",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "socket.io-client": "^4.6.0"
+  },
+  "build": {
+    "appId": "com.mangacolorizer.app",
+    "productName": "Manga Colorizer",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "dist/main/**/*",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../venv",
+        "to": "python",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../",
+        "to": "app",
+        "filter": ["*.py", "third_party/**/*", "sources/**/*", "config.py"]
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.graphics-design"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
