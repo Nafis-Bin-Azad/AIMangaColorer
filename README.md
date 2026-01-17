@@ -1,25 +1,24 @@
 # Manga Colorizer
 
-Simple desktop application for colorizing black-and-white manga pages with two engines: a **fast non-diffusion colorizer** (default) and **Stable Diffusion 1.5** (fallback).
+Desktop application for colorizing black-and-white manga pages using **Manga Colorization v2** - a fast, non-diffusion colorizer with perfect text preservation.
 
 ## Features
 
-- **Two colorization engines:**
-  - **Fast (Manga v2)**: 30-60 seconds per page, preserves text perfectly
-  - **SD1.5 (Fallback)**: 5-7 minutes per page, more flexible
+- **Manga Colorization v2 Engine**: 30-60 seconds per page with perfect text preservation
 - Desktop GUI built with Tkinter (no web dependencies)
 - **Batch processing mode** for colorizing hundreds of pages
-- Automatic text/bubble detection and protection
+- **Manga browser & downloader** with MangaFire integration
+- **Manga reader** with version switcher (original/colored)
+- **Chapter selection** for targeted colorization
 - Original ink preservation to keep lineart crisp
-- Optimized for Mac M2 Pro (MPS) with low memory usage
+- Optimized for Mac M2/M3 (MPS), CUDA GPU, or CPU
 
 ## Requirements
 
 - Python 3.9 or higher
 - Mac with M2/M3 chip (MPS), CUDA GPU, or CPU
-- **Fast Engine (MCV2)**: ~4GB RAM, ~600MB disk for models
-- **SD1.5 Engine**: ~8GB RAM, ~2GB disk for models
-- Models are downloaded automatically on first run
+- ~4GB RAM for colorization
+- ~600MB disk for models (downloaded automatically on first run)
 
 ## Installation
 
@@ -42,41 +41,54 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
 
+4. Install Playwright browsers (for manga downloading):
+```bash
+python -m playwright install chromium
+```
+
 ## Usage
 
-### GUI Mode (Single Images)
+### GUI Mode
 
-1. Run the application:
+Run the application:
 ```bash
 python manga_colorizer_gui.py
 # Or use the launcher:
 ./run.sh
 ```
 
-2. Select engine from dropdown:
-   - **Fast (Manga v2)** - Default, 30-60 seconds, perfect text preservation
-   - **SD1.5 (Slow, fallback)** - 5-7 minutes, more flexible
+The GUI has 4 tabs:
 
-3. Click "Browse..." to select a manga page (PNG, JPG, etc.)
+#### 1. Single Image Tab
+- Click "Browse..." to select a manga page (PNG, JPG, etc.)
+- Click "Colorize" to start (30-60 seconds per page)
+- First run downloads models (~600MB)
+- View result and click "Save As..." to save
 
-4. Click "Colorize" to start
-   - First run downloads models (~600MB for Fast, ~2GB for SD1.5)
-   - Fast engine: 30-60 seconds per page
-   - SD1.5 engine: 5-7 minutes per page
+#### 2. Batch Mode Tab
+- Add files, folders, or ZIP archives
+- Click "Start Batch" to process everything
+- Outputs to folder or ZIP file
 
-5. View the result and click "Save As..." to save
-   - Output is also automatically saved to the `output/` folder
+#### 3. Manga Browser Tab
+- Search and download manga from MangaFire
+- Download chapters to the `downloads/` folder
+- Select chapters to colorize
+- Track colorization progress
 
-### Batch Mode (Multiple Images)
+#### 4. Reader Tab
+- Read downloaded manga
+- Switch between original and colored versions
+- Colorize individual chapters from the reader
+- Track reading progress with bookmarks
+
+### Batch Command Line
 
 Process entire folders quickly:
 
 ```bash
-# Colorize entire folder with fast engine (default)
+# Colorize entire folder
 python batch_colorize.py --input pages/ --output colored/
-
-# Use SD1.5 fallback
-python batch_colorize.py --input pages/ --output colored/ --engine sd15
 
 # Adjust ink preservation (lower = preserve more dark pixels)
 python batch_colorize.py --input pages/ --output colored/ --ink-threshold 60
@@ -85,25 +97,30 @@ python batch_colorize.py --input pages/ --output colored/ --ink-threshold 60
 python batch_colorize.py --input pages/ --output colored/ --max-side 1280
 ```
 
-**Batch Performance:**
-- Fast engine: 100-200 pages/hour
-- SD1.5 engine: 10-15 pages/hour
+**Batch Performance**: 100-200 pages/hour
 
 ## Project Structure
 
 ```
 AIMangaColorer/
 ├── manga_colorizer_gui.py       # Main Tkinter GUI application
-├── mcv2_engine.py                # Fast manga colorization v2 engine
-├── sd_pipeline.py                # SD1.5 + ControlNet (fallback)
+├── manga_reader.py               # Manga reader component
+├── manga_library.py              # Library management
+├── manga_downloader.py           # MangaFire downloader
+├── manga_scrapers.py             # Manga source scrapers
+├── mcv2_engine.py                # Manga Colorization v2 engine
 ├── image_utils.py                # Image processing utilities
 ├── batch_colorize.py             # Batch processing script
+├── batch_processor.py            # Batch processing engine
 ├── config.py                     # Configuration constants
 ├── requirements.txt              # Python dependencies
 ├── run.sh                        # Quick launcher script
 ├── third_party/                  # Vendored manga-colorization-v2 code
 │   └── manga_colorization_v2/
-├── output/                       # Default output directory
+├── sources/                      # MangaFire scraper implementation
+│   └── tachiyomi_all_mangafire_v1_4_16/
+├── downloads/                    # Downloaded manga
+├── output/                       # Colorized manga
 └── README.md                     # This file
 ```
 
@@ -111,79 +128,58 @@ AIMangaColorer/
 
 Edit `config.py` to adjust parameters:
 
-**Fast Engine (MCV2)**:
+**Manga Colorization v2 Engine**:
 - `size`: Processing size (default: 576, must be divisible by 32)
 - `ink_threshold`: Ink preservation (default: 80, lower = preserve more dark pixels)
 - `denoise`: Enable denoising (default: True)
 - `denoise_sigma`: Denoising strength (default: 25)
 
-**SD1.5 Engine (Fallback)**:
-- `max_side`: Image resolution (default: 640)
-- `steps`: Inference steps (default: 18, lower = faster)
-- `guidance_scale`: CFG scale (default: 7.5)
-- `strength`: Denoise strength (default: 0.85)
-
 ## Models Used
 
-**Fast Engine (Manga Colorization v2)**:
+**Manga Colorization v2**:
 - **Repository**: qweasdd/manga-colorization-v2
 - **Weights**: Auto-downloaded from Google Drive (~600MB)
 - **Speed**: 30-60 seconds per page
 - **Method**: Non-diffusion GAN-based colorization
-
-**SD1.5 Engine (Fallback)**:
-- **Base Model**: `stablediffusionapi/anything-v5` (anime-focused SD1.5)
-- **ControlNet**: `lllyasviel/control_v11p_sd15s2_lineart_anime`
-- **Lineart Detector**: LineartAnimeDetector from controlnet-aux
-- **Speed**: 5-7 minutes per page
-- **Method**: Diffusion-based with lineart control
+- **Text Preservation**: Perfect (never redraws text)
 
 All models are downloaded automatically on first run.
 
 ## Performance & Memory
 
-**Fast Engine (MCV2) - Recommended**:
+**Manga Colorization v2**:
 - Speed: 30-60 seconds per page
 - Memory: ~4GB RAM
 - Batch: 100-200 pages/hour
 - Text: Perfect preservation (never redrawn)
-
-**SD1.5 Engine - Fallback**:
-- Speed: 5-7 minutes per page
-- Memory: ~8GB RAM (includes optimizations for Mac MPS)
-- Batch: 10-15 pages/hour
-- Text: Preserved via ink overlay
-
-SD1.5 optimizations for Mac MPS:
-- Attention slicing (reduces memory usage)
-- VAE slicing (processes images in tiles)
-- VAE float32 upcast (prevents black output on MPS)
-- MPS cache clearing after each generation
-
-If you encounter issues:
-- **Use Fast engine (MCV2)** - solves most problems
-- For SD1.5: reduce `max_side` in config.py (try 512)
-- Close other applications
+- Works on Mac MPS, CUDA, or CPU
 
 ## Troubleshooting
 
 **Models not downloading:**
 - Check internet connection
-- Ensure HuggingFace is accessible
-- Try running with `HF_HUB_OFFLINE=0` environment variable
+- Google Drive download may require manual approval on first run
+- Models are cached in `~/.cache/manga_colorization_v2/`
 
-**Black output images:**
-- Ensure you're using the latest version
-- VAE is automatically upcast to float32 on MPS
+**Manga download not working:**
+- Ensure Playwright is installed: `python -m playwright install chromium`
+- Check internet connection
+- MangaFire may be temporarily down
 
 **Slow performance:**
 - First run downloads models and is slower
-- Reduce `max_side` or `steps` in `config.py`
+- Reduce `max_side` in config.py (try 768)
 - Ensure no other heavy applications are running
+- Close browser tabs to free memory
 
 **Text is blurred:**
 - The ink preservation feature should prevent this
-- Adjust `ink_threshold` in image_utils.py if needed (default: 110)
+- Adjust `ink_threshold` in config.py (default: 80, lower = preserve more)
+
+**Reader not showing colored version:**
+- Ensure manga was colorized after the latest update
+- Colored chapters are in `output/<manga_name>/<chapter>/`
+- Re-colorize if needed to get the correct output structure
 
 ## License
 
@@ -191,7 +187,6 @@ See LICENSE file for details.
 
 ## Credits
 
-- Stable Diffusion by Stability AI
-- ControlNet by Lvmin Zhang
-- Anime ControlNet models by lllyasviel
-- Anything v5 model by stablediffusionapi
+- Manga Colorization v2 by qweasdd
+- Tachiyomi MangaFire extension (Java source for Python port)
+- Playwright for browser automation

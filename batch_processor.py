@@ -10,7 +10,7 @@ from natsort import natsorted
 import time
 import logging
 from PIL import Image
-from config import MCV2_PARAMS, SD15_PARAMS, DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT
+from config import MCV2_PARAMS
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,17 @@ class BatchProcessor:
     
     SUPPORTED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
     
-    def __init__(self, engine, image_utils, engine_type='mcv2', progress_callback=None):
+    def __init__(self, engine, image_utils, progress_callback=None):
         """
         Initialize batch processor.
         
         Args:
-            engine: MCV2Engine or SD15Pipeline instance
+            engine: MangaColorizationV2Engine instance
             image_utils: ImageUtils instance
-            engine_type: 'mcv2' or 'sd15'
             progress_callback: function(stage, current, total, eta, thumbnail)
         """
         self.engine = engine
         self.image_utils = image_utils
-        self.engine_type = engine_type
         self.progress_callback = progress_callback
         self.should_cancel = False
         self.start_time = None
@@ -170,45 +168,17 @@ class BatchProcessor:
         img = Image.open(img_path).convert("RGB")
         
         # Preprocess
-        if self.engine_type == 'mcv2':
-            processed, metadata = self.image_utils.preprocess(img, max_side=1024)
-            
-            # Colorize with MCV2
-            colored = self.engine.colorize(
-                processed,
-                preserve_ink=MCV2_PARAMS["preserve_ink"],
-                ink_threshold=MCV2_PARAMS["ink_threshold"],
-                size=MCV2_PARAMS["size"],
-                denoise=MCV2_PARAMS["denoise"],
-                denoise_sigma=MCV2_PARAMS["denoise_sigma"]
-            )
-        else:
-            # SD15 engine
-            processed, metadata = self.image_utils.preprocess(
-                img,
-                max_side=SD15_PARAMS["max_side"]
-            )
-            
-            # Extract lineart
-            lineart = self.image_utils.extract_lineart(processed)
-            if lineart.size != processed.size:
-                lineart = lineart.resize(processed.size, Image.LANCZOS)
-            
-            # Detect text
-            text_mask = self.image_utils.detect_text_bubbles(processed)
-            
-            # Colorize
-            colored = self.engine.colorize(
-                image=processed,
-                control_image=lineart,
-                mask=text_mask,
-                prompt=DEFAULT_PROMPT,
-                negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                **SD15_PARAMS
-            )
-            
-            # Preserve ink
-            colored = self.image_utils.preserve_ink(processed, colored, ink_threshold=110)
+        processed, metadata = self.image_utils.preprocess(img, max_side=1024)
+        
+        # Colorize with MCV2
+        colored = self.engine.colorize(
+            processed,
+            preserve_ink=MCV2_PARAMS["preserve_ink"],
+            ink_threshold=MCV2_PARAMS["ink_threshold"],
+            size=MCV2_PARAMS["size"],
+            denoise=MCV2_PARAMS["denoise"],
+            denoise_sigma=MCV2_PARAMS["denoise_sigma"]
+        )
         
         # Postprocess
         final = self.image_utils.postprocess(colored, metadata, restore_original_size=True)

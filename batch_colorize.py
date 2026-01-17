@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Batch Manga Colorization Script
-Process entire folders quickly using manga-colorization-v2 or SD1.5
+Process entire folders quickly using Manga Colorization v2
 """
 import argparse
 from pathlib import Path
@@ -10,9 +10,8 @@ from PIL import Image
 import logging
 
 from mcv2_engine import MangaColorizationV2Engine
-from sd_pipeline import SD15Pipeline
 from image_utils import ImageUtils
-from config import MCV2_PARAMS, SD15_PARAMS, DEFAULT_PROMPT, DEFAULT_NEGATIVE_PROMPT
+from config import MCV2_PARAMS
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -20,15 +19,12 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Batch colorize manga pages",
+        description="Batch colorize manga pages using Manga Colorization v2",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Colorize folder with fast engine
+  # Colorize folder
   python batch_colorize.py --input pages/ --output colored/
-  
-  # Use SD1.5 fallback
-  python batch_colorize.py --input pages/ --output colored/ --engine sd15
   
   # Adjust ink preservation threshold
   python batch_colorize.py --input pages/ --output colored/ --ink-threshold 60
@@ -37,8 +33,6 @@ Examples:
     
     parser.add_argument("--input", required=True, help="Input folder with manga pages")
     parser.add_argument("--output", required=True, help="Output folder for colored pages")
-    parser.add_argument("--engine", default="mcv2", choices=["mcv2", "sd15"], 
-                        help="Colorization engine (mcv2=fast, sd15=slow)")
     parser.add_argument("--ink-threshold", type=int, default=80,
                         help="Ink preservation threshold (0-255, lower=more ink)")
     parser.add_argument("--max-side", type=int, default=1024,
@@ -65,22 +59,16 @@ Examples:
         return 1
     
     print(f"Found {len(images)} images to colorize")
-    print(f"Engine: {args.engine.upper()}")
+    print(f"Engine: Manga Colorization v2")
     print(f"Output: {output_dir}")
     print()
     
     # Load engine once (reused for all images)
-    if args.engine == "mcv2":
-        print("Loading Fast Colorizer (Manga v2)...")
-        engine = MangaColorizationV2Engine()
-        engine.ensure_weights()
-        engine.load_model()
-        print("Fast engine ready!")
-    else:
-        print("Loading SD1.5 engine (this may take a while)...")
-        engine = SD15Pipeline()
-        engine.load_models()
-        print("SD1.5 engine ready!")
+    print("Loading Manga Colorization v2 Engine...")
+    engine = MangaColorizationV2Engine()
+    engine.ensure_weights()
+    engine.load_model()
+    print("Engine ready!")
     
     # Initialize utilities
     utils = ImageUtils()
@@ -97,34 +85,15 @@ Examples:
             # Preprocess
             processed, metadata = utils.preprocess(img, max_side=args.max_side)
             
-            # Colorize based on engine
-            if args.engine == "mcv2":
-                colored = engine.colorize(
-                    processed,
-                    preserve_ink=True,
-                    ink_threshold=args.ink_threshold,
-                    size=MCV2_PARAMS["size"],
-                    denoise=MCV2_PARAMS["denoise"],
-                    denoise_sigma=MCV2_PARAMS["denoise_sigma"]
-                )
-            else:
-                # SD1.5 fallback
-                lineart = utils.extract_lineart(processed)
-                if lineart.size != processed.size:
-                    lineart = lineart.resize(processed.size, Image.LANCZOS)
-                
-                text_mask = utils.detect_text_bubbles(processed)
-                
-                colored = engine.colorize(
-                    image=processed,
-                    control_image=lineart,
-                    mask=text_mask,
-                    prompt=DEFAULT_PROMPT,
-                    negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                    **SD15_PARAMS
-                )
-                
-                colored = utils.preserve_ink(processed, colored, ink_threshold=110)
+            # Colorize
+            colored = engine.colorize(
+                processed,
+                preserve_ink=True,
+                ink_threshold=args.ink_threshold,
+                size=MCV2_PARAMS["size"],
+                denoise=MCV2_PARAMS["denoise"],
+                denoise_sigma=MCV2_PARAMS["denoise_sigma"]
+            )
             
             # Postprocess
             final = utils.postprocess(colored, metadata, restore_original_size=True)

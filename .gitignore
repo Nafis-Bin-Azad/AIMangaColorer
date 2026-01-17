@@ -66,3 +66,6 @@ logs/
 # HuggingFace Cache
 .cache/
 huggingface/
+
+
+Suwayomi-Server-master/
