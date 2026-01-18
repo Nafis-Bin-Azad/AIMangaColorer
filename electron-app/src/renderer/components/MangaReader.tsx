@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./MangaReader.css";
 import api from "../services/api";
+import { useTaskContext } from "../contexts/TaskContext";
+import ChapterSelectionDialog from "./ChapterSelectionDialog";
 
 interface Manga {
   title: string;
@@ -53,8 +55,9 @@ const MangaReader: React.FC = () => {
   const [fitMode, setFitMode] = useState<"width" | "height" | "actual">(
     "width"
   );
-  const [colorizing, setColorizing] = useState(false);
+  const [showChapterSelection, setShowChapterSelection] = useState(false);
 
+  const { addTask } = useTaskContext();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const chapterRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -294,28 +297,26 @@ const MangaReader: React.FC = () => {
     }
   };
 
-  const colorizeLoadedChapters = async () => {
-    if (loadedChapters.length === 0) return;
+  const openColorizeDialog = () => {
+    setShowChapterSelection(true);
+  };
 
-    const totalPages = loadedChapters.reduce(
+  const handleColorizeConfirm = async (selectedChapterIds: string[]) => {
+    setShowChapterSelection(false);
+
+    const selectedChapters = loadedChapters.filter((ch) =>
+      selectedChapterIds.includes(ch.chapterId)
+    );
+
+    const totalPages = selectedChapters.reduce(
       (sum, ch) => sum + ch.pages.length,
       0
     );
 
-    const confirmed = confirm(
-      `Colorize all loaded chapters (${loadedChapters.length} chapters)? ` +
-        `This will process ${totalPages} pages and may take a while.`
-    );
-
-    if (!confirmed) return;
-
-    setColorizing(true);
-
     try {
-      // Create batch items for all loaded chapters with proper path extraction
-      const allItems = loadedChapters.flatMap((chapter) =>
+      // Create batch items for selected chapters with proper path extraction
+      const allItems = selectedChapters.flatMap((chapter) =>
         chapter.pages.map((page) => {
-          // Extract path from URL query parameter properly
           const params = new URLSearchParams(page.url.split("?")[1]);
           return {
             id: `${chapter.chapterId}_page_${page.index}`,
@@ -335,45 +336,37 @@ const MangaReader: React.FC = () => {
         output_format: "png",
       });
 
-      const batchId = batchResponse.batch_id;
+      // Add to task manager (background polling will handle updates)
+      addTask({
+        id: batchResponse.batch_id,
+        type: "colorization",
+        status: "pending",
+        title: `Colorizing ${selectedChapters.length} chapter${
+          selectedChapters.length !== 1 ? "s" : ""
+        }`,
+        progress: 0,
+        current: 0,
+        total: totalPages,
+        message: "Starting colorization...",
+        createdAt: new Date().toISOString(),
+        metadata: {
+          manga_title: currentManga!,
+          chapters: selectedChapterIds,
+        },
+      });
 
-      // Start batch processing
-      await api.startBatch(batchId);
+      // Start batch processing (background polling will track it)
+      await api.startBatch(batchResponse.batch_id);
 
-      // Poll for completion
-      const checkProgress = async () => {
-        try {
-          const status = await api.getBatchStatus(batchId);
-
-          if (status.status === "completed") {
-            alert("Colorization complete! Reloading chapters...");
-            // Reload all loaded chapters with colored version
-            setUseColored(true);
-            setLoadedChapters([]);
-            const firstChapterId = loadedChapters[0].chapterId;
-            const startIndex = chapters.findIndex(
-              (ch) => ch.id === firstChapterId
-            );
-            await preloadChapters(startIndex, loadedChapters.length);
-            setColorizing(false);
-          } else if (status.status === "failed") {
-            alert(`Colorization failed: ${status.error || "Unknown error"}`);
-            setColorizing(false);
-          } else {
-            // Continue polling
-            setTimeout(checkProgress, 3000);
-          }
-        } catch (error: any) {
-          console.error("Failed to check colorization progress:", error);
-          setColorizing(false);
-        }
-      };
-
-      checkProgress();
+      // Show success message
+      alert(
+        `Colorization started for ${selectedChapters.length} chapter${
+          selectedChapters.length !== 1 ? "s" : ""
+        }! Check the Tasks tab for progress.`
+      );
     } catch (error: any) {
-      console.error("Failed to colorize chapters:", error);
+      console.error("Failed to start colorization:", error);
       alert(`Failed to start colorization: ${error.message}`);
-      setColorizing(false);
     }
   };
 
@@ -551,12 +544,12 @@ const MangaReader: React.FC = () => {
           </button>
 
           <button
-            onClick={colorizeLoadedChapters}
+            onClick={openColorizeDialog}
             className="btn-colorize"
-            disabled={colorizing || loadedChapters.length === 0}
-            title="Colorize all loaded chapters using AI"
+            disabled={loadedChapters.length === 0}
+            title="Select chapters to colorize using AI"
           >
-            {colorizing ? "⏳ Colorizing..." : "🎨 Colorize Loaded Chapters"}
+            🎨 Colorize Chapters
           </button>
 
           <select
@@ -628,6 +621,20 @@ const MangaReader: React.FC = () => {
             </div>
           )}
       </div>
+
+      {/* Chapter Selection Dialog */}
+      {showChapterSelection && (
+        <ChapterSelectionDialog
+          chapters={loadedChapters.map((ch) => ({
+            id: ch.chapterId,
+            name: ch.chapterName,
+            pages: ch.pages.length,
+            hasColored: ch.hasColored,
+          }))}
+          onConfirm={handleColorizeConfirm}
+          onCancel={() => setShowChapterSelection(false)}
+        />
+      )}
     </div>
   );
 };

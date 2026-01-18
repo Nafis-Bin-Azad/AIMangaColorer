@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import './MangaBrowser.css';
-import api from '../services/api';
+import React, { useState, useEffect } from "react";
+import "./MangaBrowser.css";
+import api from "../services/api";
+import { useTaskContext } from "../contexts/TaskContext";
 
 interface MangaResult {
   id: string;
@@ -30,53 +31,24 @@ interface Chapter {
   url: string;
 }
 
-interface Download {
-  id: string;
-  manga_title: string;
-  status: string;
-  progress: number;
-  message: string;
-}
-
 const MangaBrowser: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MangaResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedManga, setSelectedManga] = useState<MangaDetails | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
-  const [downloads, setDownloads] = useState<Download[]>([]);
+  const [selectedChapters, setSelectedChapters] = useState<Set<string>>(
+    new Set()
+  );
   const [showModal, setShowModal] = useState(false);
   const [loadingChapters, setLoadingChapters] = useState(false);
+
+  const { addTask } = useTaskContext();
 
   // Initialize API service
   useEffect(() => {
     api.initialize();
   }, []);
-
-  // Poll for download updates
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      if (downloads.length > 0) {
-        try {
-          const updatedDownloads = await Promise.all(
-            downloads.map(async (download) => {
-              if (download.status === 'downloading' || download.status === 'queued') {
-                const status = await api.getDownloadStatus(download.id);
-                return status;
-              }
-              return download;
-            })
-          );
-          setDownloads(updatedDownloads);
-        } catch (error) {
-          console.error('Failed to update downloads:', error);
-        }
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [downloads]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -86,7 +58,7 @@ const MangaBrowser: React.FC = () => {
       const response = await api.searchManga(searchQuery);
       setSearchResults(response.results || []);
     } catch (error: any) {
-      console.error('Search failed:', error);
+      console.error("Search failed:", error);
       alert(`Search failed: ${error.message}`);
     } finally {
       setIsSearching(false);
@@ -94,7 +66,7 @@ const MangaBrowser: React.FC = () => {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSearch();
     }
   };
@@ -113,7 +85,7 @@ const MangaBrowser: React.FC = () => {
       const chaptersResponse = await api.getMangaChapters(manga.id);
       setChapters(chaptersResponse.chapters || []);
     } catch (error: any) {
-      console.error('Failed to load manga details:', error);
+      console.error("Failed to load manga details:", error);
       alert(`Failed to load details: ${error.message}`);
       setShowModal(false);
     } finally {
@@ -148,7 +120,7 @@ const MangaBrowser: React.FC = () => {
 
   const downloadSelected = async () => {
     if (selectedChapters.size === 0 || !selectedManga) {
-      alert('Please select chapters to download');
+      alert("Please select chapters to download");
       return;
     }
 
@@ -159,29 +131,33 @@ const MangaBrowser: React.FC = () => {
         chapters: Array.from(selectedChapters),
       });
 
-      const newDownload: Download = {
+      // Add to task manager (background polling will handle updates)
+      addTask({
         id: response.download_id,
-        manga_title: selectedManga.title,
-        status: 'queued',
+        type: "download",
+        status: "pending",
+        title: `Downloading ${selectedManga.title}`,
         progress: 0,
-        message: 'Starting download...',
-      };
+        current: 0,
+        total: selectedChapters.size,
+        message: "Starting download...",
+        createdAt: new Date().toISOString(),
+        metadata: {
+          manga_title: selectedManga.title,
+          manga_id: selectedManga.id,
+          chapters: Array.from(selectedChapters),
+        },
+      });
 
-      setDownloads([...downloads, newDownload]);
       closeModal();
-      alert(`Download started! ${selectedChapters.size} chapters queued.`);
+      alert(
+        `Download started! ${selectedChapters.size} chapter${
+          selectedChapters.size !== 1 ? "s" : ""
+        } queued. Check the Tasks tab for progress.`
+      );
     } catch (error: any) {
-      console.error('Download failed:', error);
+      console.error("Download failed:", error);
       alert(`Download failed: ${error.message}`);
-    }
-  };
-
-  const cancelDownload = async (downloadId: string) => {
-    try {
-      await api.cancelDownload(downloadId);
-      setDownloads(downloads.filter((d) => d.id !== downloadId));
-    } catch (error: any) {
-      console.error('Failed to cancel download:', error);
     }
   };
 
@@ -207,41 +183,10 @@ const MangaBrowser: React.FC = () => {
             disabled={isSearching || !searchQuery.trim()}
             className="btn-search"
           >
-            {isSearching ? '⏳ Searching...' : '🔍 Search'}
+            {isSearching ? "⏳ Searching..." : "🔍 Search"}
           </button>
         </div>
       </div>
-
-      {downloads.length > 0 && (
-        <div className="downloads-section">
-          <h3>📥 Active Downloads</h3>
-          <div className="downloads-list">
-            {downloads.map((download) => (
-              <div key={download.id} className="download-item">
-                <div className="download-info">
-                  <h4>{download.manga_title}</h4>
-                  <p>{download.message}</p>
-                  <div className="download-progress-bar">
-                    <div
-                      className="download-progress-fill"
-                      style={{ width: `${download.progress}%` }}
-                    />
-                  </div>
-                  <span className="download-percentage">{download.progress}%</span>
-                </div>
-                {download.status === 'downloading' && (
-                  <button
-                    onClick={() => cancelDownload(download.id)}
-                    className="btn-cancel-download"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {searchResults.length > 0 && (
         <div className="results-section">
@@ -264,7 +209,9 @@ const MangaBrowser: React.FC = () => {
                   <h4>{manga.title}</h4>
                   <p className="manga-status">{manga.status}</p>
                   {manga.latest_chapter && (
-                    <p className="manga-chapter">Latest: {manga.latest_chapter}</p>
+                    <p className="manga-chapter">
+                      Latest: {manga.latest_chapter}
+                    </p>
                   )}
                 </div>
               </div>
@@ -284,7 +231,10 @@ const MangaBrowser: React.FC = () => {
               <div className="manga-details-header">
                 <div className="manga-details-cover">
                   {selectedManga.cover_url ? (
-                    <img src={selectedManga.cover_url} alt={selectedManga.title} />
+                    <img
+                      src={selectedManga.cover_url}
+                      alt={selectedManga.title}
+                    />
                   ) : (
                     <div className="manga-cover-placeholder">📖</div>
                   )}
@@ -306,7 +256,9 @@ const MangaBrowser: React.FC = () => {
                       ))}
                     </div>
                   )}
-                  <p className="manga-description">{selectedManga.description}</p>
+                  <p className="manga-description">
+                    {selectedManga.description}
+                  </p>
                 </div>
               </div>
 
@@ -317,7 +269,10 @@ const MangaBrowser: React.FC = () => {
                     <button onClick={selectAllChapters} className="btn-select">
                       Select All
                     </button>
-                    <button onClick={deselectAllChapters} className="btn-select">
+                    <button
+                      onClick={deselectAllChapters}
+                      className="btn-select"
+                    >
                       Deselect All
                     </button>
                     <button
@@ -341,7 +296,9 @@ const MangaBrowser: React.FC = () => {
                           checked={selectedChapters.has(chapter.id)}
                           onChange={() => toggleChapter(chapter.id)}
                         />
-                        <span className="chapter-number">Ch. {chapter.number}</span>
+                        <span className="chapter-number">
+                          Ch. {chapter.number}
+                        </span>
                         <span className="chapter-title">{chapter.title}</span>
                         <span className="chapter-date">{chapter.date}</span>
                       </label>
