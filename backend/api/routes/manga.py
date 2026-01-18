@@ -269,7 +269,7 @@ async def process_download(download_id: str):
         if not source_manager:
             raise Exception("Manga source not available")
         
-        scrapers = source_manager.get_scrapers()
+        scrapers = source_manager.scrapers
         scraper = scrapers.get('MangaFire') or list(scrapers.values())[0]
         
         manga_title = download["manga_title"]

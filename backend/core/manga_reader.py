@@ -39,7 +39,7 @@ class MangaReaderFrame(ttk.Frame):
         self.show_thumbnails = False
         
         # Get available chapters
-        manga_path = library.downloads_dir / manga_title
+        manga_path = library.downloads_dir / manga_title / "original"
         self.chapters = sorted([
             d.name for d in manga_path.iterdir()
             if d.is_dir() and d.name.startswith('Ch_')
@@ -574,7 +574,7 @@ class MangaReaderFrame(ttk.Frame):
         """Colorize the current chapter"""
         from pathlib import Path
         
-        chapter_path = self.library.downloads_dir / self.manga_title / self.current_chapter
+        chapter_path = self.library.downloads_dir / self.manga_title / "original" / self.current_chapter
         
         if not chapter_path.exists():
             messagebox.showerror("Error", "Chapter path not found")

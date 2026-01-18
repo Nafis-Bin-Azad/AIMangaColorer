@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./MangaReader.css";
 import api from "../services/api";
 
@@ -27,6 +27,13 @@ interface Page {
   filename: string;
 }
 
+interface LoadedChapter {
+  chapterId: string;
+  chapterName: string;
+  pages: Page[];
+  hasColored: boolean;
+}
+
 const MangaReader: React.FC = () => {
   const [view, setView] = useState<"library" | "reader">("library");
   const [library, setLibrary] = useState<Manga[]>([]);
@@ -35,17 +42,22 @@ const MangaReader: React.FC = () => {
   // Reader state
   const [currentManga, setCurrentManga] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [currentChapter, setCurrentChapter] = useState<string | null>(null);
-  const [pages, setPages] = useState<Page[]>([]);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [loadedChapters, setLoadedChapters] = useState<LoadedChapter[]>([]);
+  const [loadingChapters, setLoadingChapters] = useState<Set<string>>(
+    new Set()
+  );
+  const [currentVisibleChapter, setCurrentVisibleChapter] = useState<
+    string | null
+  >(null);
   const [useColored, setUseColored] = useState(false);
-  const [loadingPages, setLoadingPages] = useState(false);
   const [fitMode, setFitMode] = useState<"width" | "height" | "actual">(
     "width"
   );
-  const [showThumbnails, setShowThumbnails] = useState(false);
-  const [bookmarks, setBookmarks] = useState<Set<number>>(new Set());
   const [colorizing, setColorizing] = useState(false);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const chapterRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   // Initialize API service
   useEffect(() => {
@@ -59,48 +71,63 @@ const MangaReader: React.FC = () => {
     }
   }, [view]);
 
-  // Keyboard shortcuts
+  // Setup Intersection Observer for visible chapter detection
   useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (view !== "reader") return;
+    if (view !== "reader") return;
 
-      switch (e.key) {
-        case "ArrowLeft":
-          previousPage();
-          break;
-        case "ArrowRight":
-          nextPage();
-          break;
-        case "Escape":
-          closeReader();
-          break;
-        case "t":
-          setShowThumbnails(!showThumbnails);
-          break;
-        case "b":
-          toggleBookmark();
-          break;
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const chapterId = entry.target.getAttribute("data-chapter-id");
+            if (chapterId) {
+              setCurrentVisibleChapter(chapterId);
+
+              // Find the first visible page in this chapter
+              const chapterElement = entry.target as HTMLElement;
+              const pageElements =
+                chapterElement.querySelectorAll(".page-container");
+
+              if (pageElements.length > 0) {
+                // Save progress for the visible chapter
+                const chapter = loadedChapters.find(
+                  (ch) => ch.chapterId === chapterId
+                );
+                if (chapter && currentManga) {
+                  // Use first page as current page for progress tracking
+                  api
+                    .saveProgress(
+                      currentManga,
+                      chapterId,
+                      0,
+                      chapter.pages.length
+                    )
+                    .catch(console.error);
+                }
+              }
+            }
+          }
+        });
+      },
+      {
+        threshold: 0.3,
+        rootMargin: "0px",
+      }
+    );
+
+    // Observe all chapter sections
+    chapterRefsMap.current.forEach((element) => {
+      if (observerRef.current) {
+        observerRef.current.observe(element);
+      }
+    });
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
       }
     };
-
-    window.addEventListener("keydown", handleKeyPress);
-    return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [view, currentPage, showThumbnails]);
-
-  // Auto-save progress
-  useEffect(() => {
-    if (currentManga && currentChapter && view === "reader") {
-      const timer = setTimeout(() => {
-        api.saveProgress(
-          currentManga,
-          currentChapter,
-          currentPage,
-          pages.length
-        );
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [currentPage, currentManga, currentChapter, pages.length, view]);
+  }, [view, loadedChapters, currentManga]);
 
   const loadLibrary = async () => {
     setLoadingLibrary(true);
@@ -125,132 +152,159 @@ const MangaReader: React.FC = () => {
       const lastReadChapter = response.chapters.find(
         (ch: Chapter) => ch.last_page > 0
       );
-      if (lastReadChapter) {
-        await openChapter(
-          manga.title,
-          lastReadChapter.id,
-          lastReadChapter.has_colored,
-          lastReadChapter.last_page
-        );
-      } else if (response.chapters.length > 0) {
-        await openChapter(
-          manga.title,
-          response.chapters[0].id,
-          response.chapters[0].has_colored,
-          0
-        );
-      }
+
+      const startChapterIndex = lastReadChapter
+        ? response.chapters.findIndex(
+            (ch: Chapter) => ch.id === lastReadChapter.id
+          )
+        : 0;
+
+      // Preload first 3 chapters starting from last read position
+      await preloadChapters(startChapterIndex, 3);
 
       setView("reader");
+
+      // Scroll to the starting chapter after a short delay
+      setTimeout(() => {
+        const startChapterId = lastReadChapter?.id || response.chapters[0]?.id;
+        scrollToChapter(startChapterId);
+      }, 100);
     } catch (error: any) {
       console.error("Failed to open manga:", error);
       alert(`Failed to open manga: ${error.message}`);
     }
   };
 
-  const openChapter = async (
-    mangaTitle: string,
-    chapterId: string,
-    hasColored: boolean,
-    startPage: number = 0
-  ) => {
-    setLoadingPages(true);
+  const preloadChapters = async (startIndex: number, count: number = 3) => {
+    const chaptersToLoad = chapters.slice(startIndex, startIndex + count);
+
+    for (const chapter of chaptersToLoad) {
+      if (
+        loadingChapters.has(chapter.id) ||
+        loadedChapters.some((lc) => lc.chapterId === chapter.id)
+      ) {
+        continue;
+      }
+
+      await loadChapter(chapter.id);
+    }
+  };
+
+  const loadChapter = async (chapterId: string) => {
+    // Mark as loading
+    setLoadingChapters((prev) => {
+      const next = new Set(prev);
+      next.add(chapterId);
+      return next;
+    });
+
     try {
-      const colored = hasColored && useColored;
+      const chapter = chapters.find((ch) => ch.id === chapterId);
+      if (!chapter) return;
+
+      const colored = chapter.has_colored && useColored;
       const response = await api.getChapterPages(
-        mangaTitle,
+        currentManga!,
         chapterId,
         colored
       );
-      setPages(response.pages || []);
-      setCurrentChapter(chapterId);
-      setCurrentPage(startPage);
 
-      // Load bookmarks
-      const bookmarksResponse = await api.getBookmarks(mangaTitle, chapterId);
-      setBookmarks(new Set(bookmarksResponse.bookmarks || []));
+      const newChapter: LoadedChapter = {
+        chapterId,
+        chapterName: chapter.name,
+        pages: response.pages || [],
+        hasColored: response.has_colored,
+      };
+
+      setLoadedChapters((prev) => {
+        // Check if already loaded
+        if (prev.some((ch) => ch.chapterId === chapterId)) {
+          return prev;
+        }
+
+        // Add and sort by chapter order
+        const updated = [...prev, newChapter];
+        return updated.sort(
+          (a, b) =>
+            chapters.findIndex((c) => c.id === a.chapterId) -
+            chapters.findIndex((c) => c.id === b.chapterId)
+        );
+      });
     } catch (error: any) {
-      console.error("Failed to load chapter:", error);
-      alert(`Failed to load chapter: ${error.message}`);
+      console.error(`Failed to load chapter ${chapterId}:`, error);
     } finally {
-      setLoadingPages(false);
+      setLoadingChapters((prev) => {
+        const next = new Set(prev);
+        next.delete(chapterId);
+        return next;
+      });
     }
   };
 
-  const changeChapter = async (direction: "prev" | "next") => {
-    if (!currentManga || !currentChapter) return;
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const container = e.currentTarget;
+      const { scrollTop, scrollHeight, clientHeight } = container;
 
-    const currentIndex = chapters.findIndex((ch) => ch.id === currentChapter);
-    const newIndex = direction === "prev" ? currentIndex - 1 : currentIndex + 1;
-
-    if (newIndex >= 0 && newIndex < chapters.length) {
-      const nextChapter = chapters[newIndex];
-      await openChapter(currentManga, nextChapter.id, nextChapter.has_colored);
-    }
-  };
-
-  const nextPage = () => {
-    if (currentPage < pages.length - 1) {
-      setCurrentPage(currentPage + 1);
-    } else {
-      changeChapter("next");
-    }
-  };
-
-  const previousPage = () => {
-    if (currentPage > 0) {
-      setCurrentPage(currentPage - 1);
-    } else {
-      changeChapter("prev");
-    }
-  };
-
-  const jumpToPage = (pageIndex: number) => {
-    setCurrentPage(pageIndex);
-    setShowThumbnails(false);
-  };
-
-  const toggleBookmark = async () => {
-    if (!currentManga || !currentChapter) return;
-
-    try {
-      await api.toggleBookmark(currentManga, currentChapter, currentPage);
-      const newBookmarks = new Set(bookmarks);
-      if (bookmarks.has(currentPage)) {
-        newBookmarks.delete(currentPage);
-      } else {
-        newBookmarks.add(currentPage);
+      // Load more at bottom (within 2000px)
+      if (scrollHeight - scrollTop - clientHeight < 2000) {
+        const lastLoadedChapter = loadedChapters[loadedChapters.length - 1];
+        if (lastLoadedChapter) {
+          const lastLoadedIndex = chapters.findIndex(
+            (c) => c.id === lastLoadedChapter.chapterId
+          );
+          if (lastLoadedIndex >= 0 && lastLoadedIndex < chapters.length - 1) {
+            const nextChapter = chapters[lastLoadedIndex + 1];
+            if (
+              !loadingChapters.has(nextChapter.id) &&
+              !loadedChapters.some((ch) => ch.chapterId === nextChapter.id)
+            ) {
+              loadChapter(nextChapter.id);
+            }
+          }
+        }
       }
-      setBookmarks(newBookmarks);
-    } catch (error: any) {
-      console.error("Failed to toggle bookmark:", error);
+
+      // Load more at top (within 2000px)
+      if (scrollTop < 2000) {
+        const firstLoadedChapter = loadedChapters[0];
+        if (firstLoadedChapter) {
+          const firstLoadedIndex = chapters.findIndex(
+            (c) => c.id === firstLoadedChapter.chapterId
+          );
+          if (firstLoadedIndex > 0) {
+            const prevChapter = chapters[firstLoadedIndex - 1];
+            if (
+              !loadingChapters.has(prevChapter.id) &&
+              !loadedChapters.some((ch) => ch.chapterId === prevChapter.id)
+            ) {
+              loadChapter(prevChapter.id);
+            }
+          }
+        }
+      }
+    },
+    [loadedChapters, chapters, loadingChapters]
+  );
+
+  const scrollToChapter = (chapterId: string) => {
+    const element = chapterRefsMap.current.get(chapterId);
+    if (element && scrollContainerRef.current) {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
 
-  const toggleVersion = async () => {
-    if (!currentManga || !currentChapter) return;
+  const colorizeLoadedChapters = async () => {
+    if (loadedChapters.length === 0) return;
 
-    const newColored = !useColored;
-    setUseColored(newColored);
-
-    try {
-      const response = await api.getChapterPages(
-        currentManga,
-        currentChapter,
-        newColored
-      );
-      setPages(response.pages || []);
-    } catch (error: any) {
-      console.error("Failed to switch version:", error);
-      alert(`Failed to switch version: ${error.message}`);
-    }
-  };
-
-  const colorizeChapter = async () => {
-    if (!currentManga || !currentChapter) return;
+    const totalPages = loadedChapters.reduce(
+      (sum, ch) => sum + ch.pages.length,
+      0
+    );
 
     const confirmed = confirm(
-      `Colorize this chapter? This will process all ${pages.length} pages and may take several minutes.`
+      `Colorize all loaded chapters (${loadedChapters.length} chapters)? ` +
+        `This will process ${totalPages} pages and may take a while.`
     );
 
     if (!confirmed) return;
@@ -258,17 +312,24 @@ const MangaReader: React.FC = () => {
     setColorizing(true);
 
     try {
-      // Create batch job for colorization
-      const items = pages.map((page) => ({
-        id: `${currentChapter}_page_${page.index}`,
-        name: page.filename,
-        path: page.url.replace("/api/library/page?path=", ""),
-        manga_title: currentManga,
-        chapter_id: currentChapter,
-      }));
+      // Create batch items for all loaded chapters with proper path extraction
+      const allItems = loadedChapters.flatMap((chapter) =>
+        chapter.pages.map((page) => {
+          // Extract path from URL query parameter properly
+          const params = new URLSearchParams(page.url.split("?")[1]);
+          return {
+            id: `${chapter.chapterId}_page_${page.index}`,
+            name: page.filename,
+            path: params.get("path") || "",
+            type: "file",
+            manga_title: currentManga,
+            chapter_id: chapter.chapterId,
+          };
+        })
+      );
 
       const batchResponse = await api.createBatch({
-        items,
+        items: allItems,
         ink_threshold: 80,
         max_side: 1024,
         output_format: "png",
@@ -281,41 +342,101 @@ const MangaReader: React.FC = () => {
 
       // Poll for completion
       const checkProgress = async () => {
-        const status = await api.getBatchStatus(batchId);
+        try {
+          const status = await api.getBatchStatus(batchId);
 
-        if (status.status === "completed") {
-          alert("Chapter colorization complete! Reloading...");
-          // Reload chapter to show colored version
-          await openChapter(currentManga, currentChapter, true);
-          setUseColored(true);
+          if (status.status === "completed") {
+            alert("Colorization complete! Reloading chapters...");
+            // Reload all loaded chapters with colored version
+            setUseColored(true);
+            setLoadedChapters([]);
+            const firstChapterId = loadedChapters[0].chapterId;
+            const startIndex = chapters.findIndex(
+              (ch) => ch.id === firstChapterId
+            );
+            await preloadChapters(startIndex, loadedChapters.length);
+            setColorizing(false);
+          } else if (status.status === "failed") {
+            alert(`Colorization failed: ${status.error || "Unknown error"}`);
+            setColorizing(false);
+          } else {
+            // Continue polling
+            setTimeout(checkProgress, 3000);
+          }
+        } catch (error: any) {
+          console.error("Failed to check colorization progress:", error);
           setColorizing(false);
-        } else if (status.status === "failed") {
-          alert(`Colorization failed: ${status.error || "Unknown error"}`);
-          setColorizing(false);
-        } else {
-          // Continue polling
-          setTimeout(checkProgress, 3000);
         }
       };
 
       checkProgress();
     } catch (error: any) {
-      console.error("Failed to colorize chapter:", error);
+      console.error("Failed to colorize chapters:", error);
       alert(`Failed to start colorization: ${error.message}`);
       setColorizing(false);
+    }
+  };
+
+  const toggleVersion = async () => {
+    const newColored = !useColored;
+    setUseColored(newColored);
+
+    // Reload all loaded chapters with new version
+    const chaptersToReload = [...loadedChapters];
+    setLoadedChapters([]);
+
+    for (const chapter of chaptersToReload) {
+      try {
+        const response = await api.getChapterPages(
+          currentManga!,
+          chapter.chapterId,
+          newColored
+        );
+
+        setLoadedChapters((prev) => {
+          const updated = [
+            ...prev,
+            {
+              ...chapter,
+              pages: response.pages || [],
+            },
+          ];
+          return updated.sort(
+            (a, b) =>
+              chapters.findIndex((c) => c.id === a.chapterId) -
+              chapters.findIndex((c) => c.id === b.chapterId)
+          );
+        });
+      } catch (error: any) {
+        console.error(`Failed to reload chapter ${chapter.chapterId}:`, error);
+      }
     }
   };
 
   const closeReader = () => {
     setView("library");
     setCurrentManga(null);
-    setCurrentChapter(null);
-    setPages([]);
-    setCurrentPage(0);
-    setShowThumbnails(false);
-    setBookmarks(new Set());
+    setChapters([]);
+    setLoadedChapters([]);
+    setLoadingChapters(new Set());
+    setCurrentVisibleChapter(null);
+    chapterRefsMap.current.clear();
     loadLibrary();
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (view !== "reader") return;
+
+      if (e.key === "Escape") {
+        closeReader();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [view]);
 
   if (view === "library") {
     return (
@@ -384,7 +505,7 @@ const MangaReader: React.FC = () => {
     );
   }
 
-  // Reader View
+  // Infinite Scroll Reader View
   return (
     <div className="manga-reader reader-mode">
       <div className="reader-toolbar">
@@ -394,22 +515,19 @@ const MangaReader: React.FC = () => {
 
         <div className="reader-info">
           <span className="manga-title-small">{currentManga}</span>
-          <span className="chapter-indicator">
-            {currentChapter} - Page {currentPage + 1}/{pages.length}
-          </span>
+          {currentVisibleChapter && (
+            <span className="chapter-indicator">
+              📖{" "}
+              {chapters.find((ch) => ch.id === currentVisibleChapter)?.name ||
+                currentVisibleChapter}
+            </span>
+          )}
         </div>
 
         <div className="reader-controls">
           <select
-            value={currentChapter || ""}
-            onChange={(e) =>
-              openChapter(
-                currentManga!,
-                e.target.value,
-                chapters.find((ch) => ch.id === e.target.value)?.has_colored ||
-                  false
-              )
-            }
+            value={currentVisibleChapter || ""}
+            onChange={(e) => scrollToChapter(e.target.value)}
             className="chapter-select"
           >
             {chapters.map((ch) => (
@@ -422,11 +540,9 @@ const MangaReader: React.FC = () => {
           <button
             onClick={toggleVersion}
             className={`btn-version ${useColored ? "colored" : ""}`}
-            disabled={
-              !chapters.find((ch) => ch.id === currentChapter)?.has_colored
-            }
+            disabled={!loadedChapters.some((ch) => ch.hasColored)}
             title={
-              chapters.find((ch) => ch.id === currentChapter)?.has_colored
+              loadedChapters.some((ch) => ch.hasColored)
                 ? "Toggle between colored and original"
                 : "No colored version available"
             }
@@ -435,12 +551,12 @@ const MangaReader: React.FC = () => {
           </button>
 
           <button
-            onClick={colorizeChapter}
+            onClick={colorizeLoadedChapters}
             className="btn-colorize"
-            disabled={colorizing || loadingPages}
-            title="Colorize this chapter using AI"
+            disabled={colorizing || loadedChapters.length === 0}
+            title="Colorize all loaded chapters using AI"
           >
-            {colorizing ? "⏳ Colorizing..." : "🎨 Colorize Chapter"}
+            {colorizing ? "⏳ Colorizing..." : "🎨 Colorize Loaded Chapters"}
           </button>
 
           <select
@@ -452,79 +568,66 @@ const MangaReader: React.FC = () => {
             <option value="height">Fit Height</option>
             <option value="actual">Actual Size</option>
           </select>
-
-          <button
-            onClick={() => setShowThumbnails(!showThumbnails)}
-            className="btn-thumbnails"
-          >
-            {showThumbnails ? "✕" : "🖼️"}
-          </button>
-
-          <button
-            onClick={toggleBookmark}
-            className={`btn-bookmark ${
-              bookmarks.has(currentPage) ? "bookmarked" : ""
-            }`}
-          >
-            {bookmarks.has(currentPage) ? "🔖" : "📑"}
-          </button>
         </div>
       </div>
 
-      {loadingPages ? (
-        <div className="reader-loading">Loading pages...</div>
-      ) : (
-        <>
-          <div className={`reader-viewer fit-${fitMode}`}>
-            <button onClick={previousPage} className="nav-button nav-prev">
-              ‹
-            </button>
+      <div
+        className="reader-infinite-scroll"
+        onScroll={handleScroll}
+        ref={scrollContainerRef}
+      >
+        {loadedChapters.map((chapter) => (
+          <div
+            key={chapter.chapterId}
+            className="chapter-section"
+            data-chapter-id={chapter.chapterId}
+            ref={(el) => {
+              if (el) {
+                chapterRefsMap.current.set(chapter.chapterId, el);
+              }
+            }}
+          >
+            {/* Subtle chapter marker */}
+            <div className="chapter-marker">
+              <span className="chapter-name">{chapter.chapterName}</span>
+              <span className="chapter-page-count">
+                {chapter.pages.length} pages
+              </span>
+            </div>
 
-            {pages[currentPage] && (
-              <img
-                src={`${api.getClient().defaults.baseURL}${
-                  pages[currentPage].url
-                }`}
-                alt={`Page ${currentPage + 1}`}
-                className="reader-page"
-              />
-            )}
-
-            <button onClick={nextPage} className="nav-button nav-next">
-              ›
-            </button>
+            {/* Chapter pages */}
+            <div className="chapter-pages">
+              {chapter.pages.map((page) => (
+                <div key={page.index} className="page-container">
+                  <img
+                    src={`${api.getClient().defaults.baseURL}${page.url}`}
+                    alt={`${chapter.chapterName} - Page ${page.index + 1}`}
+                    className={`page-image fit-${fitMode}`}
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
+        ))}
 
-          {showThumbnails && (
-            <div className="thumbnails-sidebar">
-              <div className="thumbnails-header">
-                <h3>Pages</h3>
-                <button onClick={() => setShowThumbnails(false)}>✕</button>
-              </div>
-              <div className="thumbnails-grid">
-                {pages.map((page, idx) => (
-                  <div
-                    key={idx}
-                    className={`thumbnail ${
-                      idx === currentPage ? "active" : ""
-                    } ${bookmarks.has(idx) ? "bookmarked" : ""}`}
-                    onClick={() => jumpToPage(idx)}
-                  >
-                    <img
-                      src={`${api.getClient().defaults.baseURL}${page.url}`}
-                      alt={`Page ${idx + 1}`}
-                    />
-                    <span className="thumbnail-number">{idx + 1}</span>
-                    {bookmarks.has(idx) && (
-                      <span className="bookmark-icon">🔖</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+        {/* Loading indicator for next chapters */}
+        {loadingChapters.size > 0 && (
+          <div className="loading-chapters">
+            <div className="spinner"></div>
+            <p>Loading more chapters...</p>
+          </div>
+        )}
+
+        {/* End of manga indicator */}
+        {loadedChapters.length > 0 &&
+          loadedChapters.length === chapters.length &&
+          loadingChapters.size === 0 && (
+            <div className="end-of-manga">
+              <p>📚 End of manga</p>
             </div>
           )}
-        </>
-      )}
+      </div>
     </div>
   );
 };

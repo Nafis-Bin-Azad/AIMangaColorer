@@ -498,3 +498,160 @@
 .thumbnails-grid::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
 }
+
+/* Infinite Scroll Reader */
+.reader-infinite-scroll {
+  width: 100%;
+  height: calc(100vh - 60px); /* Subtract toolbar height */
+  overflow-y: scroll;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  background: var(--bg-primary);
+}
+
+.reader-infinite-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.reader-infinite-scroll::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.reader-infinite-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 6px;
+}
+
+.reader-infinite-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+.chapter-section {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.chapter-marker {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  padding: 0.75rem 1.5rem;
+  text-align: center;
+  border-bottom: 2px solid var(--primary-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.chapter-name {
+  font-size: 1rem;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.chapter-page-count {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  padding: 0.25rem 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.chapter-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-primary);
+}
+
+.page-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  background: var(--bg-primary);
+}
+
+.page-image {
+  max-width: 100%;
+  display: block;
+  margin: 0 auto;
+}
+
+.page-image.fit-width {
+  width: 100%;
+  height: auto;
+}
+
+.page-image.fit-height {
+  width: auto;
+  height: 100vh;
+  max-width: 100%;
+}
+
+.page-image.fit-actual {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+}
+
+.loading-chapters {
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.loading-chapters .spinner {
+  width: 50px;
+  height: 50px;
+  margin: 0 auto 1rem;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-chapters p {
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.end-of-manga {
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.end-of-manga p {
+  font-size: 1.5rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+/* Responsive adjustments for infinite scroll */
+@media (max-width: 768px) {
+  .chapter-marker {
+    padding: 0.5rem 1rem;
+  }
+
+  .chapter-name {
+    font-size: 0.875rem;
+  }
+
+  .chapter-page-count {
+    font-size: 0.75rem;
+  }
+
+  .reader-infinite-scroll {
+    height: calc(100vh - 120px); /* More space for mobile toolbar */
+  }
+}

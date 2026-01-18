@@ -240,7 +240,7 @@ async def get_progress(manga_title: str):
                 "page": prog.page,
                 "total_pages": prog.total_pages,
                 "percentage": int((prog.page / prog.total_pages * 100)) if prog.total_pages > 0 else 0,
-                "last_read": prog.last_read.isoformat()
+                "last_read": prog.last_read
             })
         
         return {
@@ -342,9 +342,9 @@ async def get_history(limit: int = 20):
         formatted_history = []
         for entry in history:
             formatted_history.append({
-                "manga": entry.manga,
-                "chapter": entry.chapter,
-                "timestamp": entry.timestamp.isoformat()
+                "manga": entry['manga_title'],
+                "chapter": entry['chapter'],
+                "timestamp": entry['timestamp']
             })
         
         return {
